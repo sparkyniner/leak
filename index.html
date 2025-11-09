@@ -1,183 +1,251 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Sentinel-AI — LLM-Based Antivirus Simulator</title>
-<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
-<script src="https://cdn.jsdelivr.net/pyodide/v0.24.1/pyodide.js"></script>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Browser / Device Info Tester — Single File (Consent)</title>
 <style>
-:root{--bg:#050e20;--panel:#0b1b2a;--accent:#00c6ff;--good:#00d38a;--danger:#ff6b6b;--muted:#aabdd6;}
-body{margin:0;font-family:Inter,system-ui;background:var(--bg);color:#e6f2ff}
-header{display:flex;justify-content:space-between;align-items:center;padding:16px 22px;border-bottom:1px solid rgba(255,255,255,0.08);}
-.logo{display:flex;align-items:center;gap:10px;font-weight:700}
-.logo div{width:38px;height:38px;background:linear-gradient(135deg,#003b53,#00c6ff);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;color:white}
-.status{font-size:13px;color:var(--muted)}
-.progress{width:120px;height:6px;background:rgba(255,255,255,0.1);border-radius:3px;overflow:hidden;display:inline-block;margin-left:6px;vertical-align:middle}
-.progress div{height:6px;width:0;background:var(--accent);transition:width .3s}
-.layout{display:grid;grid-template-columns:360px 1fr;gap:14px;padding:14px}
-.panel{background:var(--panel);padding:14px;border-radius:10px;box-shadow:0 6px 18px rgba(0,0,0,.4)}
-button{background:var(--accent);border:none;color:#011;padding:8px 12px;border-radius:8px;font-weight:700;cursor:pointer;margin-right:8px}
-button.secondary{background:transparent;border:1px solid rgba(255,255,255,0.1);color:var(--muted)}
-#logs{height:160px;overflow:auto;background:#081425;padding:8px;border-radius:8px;font-family:monospace;font-size:13px}
-#reason{background:#081425;padding:8px;border-radius:8px;font-size:13px;min-height:100px}
-canvas{width:100%;height:200px;border-radius:8px;background:#060f20}
-.small{font-size:12px;color:var(--muted)}
+  :root{--bg:#071226;--panel:#0b2130;--accent:#00c6ff;--muted:#9fb9d1}
+  body{font-family:Inter,system-ui,Segoe UI,Roboto,Arial;margin:0;background:var(--bg);color:#eaf6ff}
+  .wrap{max-width:980px;margin:28px auto;padding:20px}
+  header{display:flex;align-items:center;gap:12px}
+  h1{margin:0;font-size:20px}
+  .grid{display:grid;grid-template-columns:1fr 320px;gap:18px;margin-top:14px}
+  .panel{background:var(--panel);padding:14px;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.6)}
+  pre{background:#021425;padding:12px;border-radius:8px;overflow:auto;max-height:520px}
+  .controls{display:flex;flex-direction:column;gap:8px}
+  input[type="text"]{width:100%;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.06);background:transparent;color:#eaf6ff}
+  button{background:var(--accent);border:0;padding:8px 10px;border-radius:8px;font-weight:700;cursor:pointer}
+  .btn-ghost{background:transparent;border:1px solid rgba(255,255,255,0.06);color:var(--muted)}
+  label{font-size:13px;color:var(--muted)}
+  footer{margin-top:14px;color:var(--muted);font-size:13px}
+  .small{font-size:13px;color:var(--muted)}
+  .row{display:flex;gap:8px;align-items:center}
 </style>
 </head>
 <body>
-<header>
- <div class="logo"><div>AV</div><span>Sentinel-AI Simulator</span></div>
- <div class="status">Status: <span id="statustxt">Initializing…</span>
-   <span class="progress"><div id="progressbar"></div></span>
- </div>
-</header>
+<div class="wrap">
+  <header>
+    <div style="width:44px;height:44px;border-radius:8px;background:linear-gradient(135deg,#002b3a,#00c6ff);display:flex;align-items:center;justify-content:center;font-weight:800;color:#001">BI</div>
+    <div>
+      <h1>Browser & Device Info Tester (Consent-based)</h1>
+      <div class="small">Collects browser-exposed signals and shows them locally. Only sends data if user consents.</div>
+    </div>
+  </header>
 
-<div class="layout">
-  <div class="panel">
-    <h3>Controls</h3>
-    <label>Behavior count: <b id="countlbl">100</b></label>
-    <input id="count" type="range" min="50" max="300" value="100" step="25"/><br>
-    <label>Malicious ratio: <b id="ratlbl">0.4</b></label>
-    <input id="ratio" type="range" min="0" max="1" value="0.4" step="0.05"/><br><br>
-    <button id="simulate">Run Simulation</button>
-    <button id="reset" class="secondary">Reset</button>
-    <p class="small">This demo synthetically generates benign &amp; malicious behaviors, feeds them to a simulated “LLM engine,”
-    and visualizes detection accuracy, live events, and reasoning output — all in your browser.</p>
-  </div>
-
-  <div style="display:flex;flex-direction:column;gap:12px">
+  <div class="grid" style="margin-top:18px">
     <div class="panel">
-      <h3>Live Activity Feed</h3>
-      <canvas id="gauge"></canvas>
-      <div id="logs"></div>
+      <h3>Collected Data</h3>
+      <pre id="output">Gathering data — please wait…</pre>
+      <footer class="small">Data shown above is gathered from public browser APIs (client hints, WebGL, screen, battery, etc.). No data leaves your browser until you click <strong>Send to admin</strong> with consent.</footer>
     </div>
 
-    <div class="panel" id="results" style="display:none">
-      <h3>Detection Metrics</h3>
-      <div id="plots"></div>
-      <h4>Model Reasoning</h4>
-      <div id="reason"></div>
+    <div class="panel">
+      <h3>Admin / Controls</h3>
+      <div class="controls">
+        <label>Optional: paste your admin endpoint (webhook) to POST JSON to (e.g. Vercel function URL)</label>
+        <input id="adminUrl" type="text" placeholder="https://project.vercel.app/api/submit" />
+        <label><input id="consent" type="checkbox" /> I consent to send my browser/device info to admin</label>
+
+        <div class="row">
+          <button id="sendBtn" disabled>Send to admin</button>
+          <button class="btn-ghost" id="copyBtn">Copy JSON</button>
+        </div>
+
+        <div style="margin-top:6px" class="small">
+          <strong>Notes:</strong>
+          <ul style="margin:6px 0 0 18px">
+            <li>Do not use to collect data from people without consent.</li>
+            <li>Vercel logs or any webhook you provide will receive the JSON when sent.</li>
+            <li>Server-side storage / logging must be secured (admin only).</li>
+          </ul>
+        </div>
+
+        <hr style="border:none;border-top:1px solid rgba(255,255,255,0.04)" />
+
+        <label class="small">Developer / admin tips</label>
+        <div class="small">
+          - If you want to log on Vercel, deploy a serverless function at <code>/api/submit</code> that prints request body to console.<br>
+          - You can view Vercel function logs in Vercel Dashboard → Project → Functions → Logs.
+        </div>
+      </div>
     </div>
   </div>
 </div>
 
-<footer style="padding:12px 20px" class="small">
-All data are synthetic. Educational simulation of an LLM-driven antivirus. No real malware involved.
-</footer>
+<script>
+// --------- helper utilities ----------
+function nowISO(){return new Date().toISOString();}
+function safe(fn, fallback){ try{ return fn(); } catch(e){ return fallback; } }
 
-<script type="module">
-const stat=document.getElementById("statustxt"),bar=document.getElementById("progressbar");
-function setStatus(t,p=0,c="#00c6ff"){stat.textContent=t;bar.style.width=p+"%";bar.style.background=c;}
-
-let pyodide=null;
-async function initPyodide(){
+// --------- feature collectors ----------
+async function getClientHints(){
+  if (!('userAgentData' in navigator)) return null;
   try{
-    setStatus("Downloading Pyodide…",20);
-    pyodide=await loadPyodide({indexURL:"https://cdn.jsdelivr.net/pyodide/v0.24.1/"});
-    setStatus("Loading numpy…",60);
-    await pyodide.loadPackage(["numpy"]);
-    setStatus("Compiling engine…",80);
-    await pyodide.runPythonAsync(pythonCore);
-    setStatus("Ready ✅",100,"#00d38a");
-  }catch(e){console.error(e);setStatus("Error",100,"#ff6b6b");}
-}
-initPyodide();
-
-const pythonCore=`
-import numpy as np, json, random
-BEHAVIORS={
- "benign":["opened file","read config","sent ping","displayed GUI","checked update","accessed cache"],
- "ransomware":["encrypted file","deleted backup","renamed extension","dropped note"],
- "keylogger":["hooked keyboard","logged keystroke","opened hidden socket"],
- "miner":["high cpu","connected mining pool","downloaded payload"]
-}
-def gen_dataset(n=100,mal_ratio=0.4):
- data=[]
- for _ in range(n):
-  if random.random()<mal_ratio:
-   typ=random.choice(["ransomware","keylogger","miner"])
-   acts=random.sample(BEHAVIORS[typ],k=min(3,len(BEHAVIORS[typ])))
-   label="malicious"
-  else:
-   acts=random.sample(BEHAVIORS["benign"],k=min(3,len(BEHAVIORS["benign"])))
-   label="benign"
-  data.append({"actions":acts,"label":label})
- return data
-
-def llm_detect(event):
- text=" ".join(event["actions"]).lower()
- score=0
- if any(k in text for k in ["encrypt","backup","extension"]): score+=0.6
- if any(k in text for k in ["keyboard","keystroke"]): score+=0.5
- if "cpu" in text or "pool" in text: score+=0.4
- if "ping" in text or "cache" in text: score-=0.3
- return max(0,min(1,0.5+score))
-def simulate(n=100,mal_ratio=0.4):
- data=gen_dataset(n,mal_ratio)
- preds=[]
- for ev in data:
-  sc=llm_detect(ev)
-  pred="malicious" if sc>0.6 else "benign"
-  preds.append({"actions":ev["actions"],"label":ev["label"],"pred":pred,"score":sc})
- acc=sum(1 for p in preds if p["label"]==p["pred"])/len(preds)
- tp=sum(1 for p in preds if p["label"]=="malicious" and p["pred"]=="malicious")
- fp=sum(1 for p in preds if p["label"]=="benign" and p["pred"]=="malicious")
- fn=sum(1 for p in preds if p["label"]=="malicious" and p["pred"]=="benign")
- precision=tp/(tp+fp+1e-9); recall=tp/(tp+fn+1e-9)
- reasoning=f"LLM detected patterns associated with encryption and keylogging; precision={precision:.2f}, recall={recall:.2f}."
- return json.dumps({"preds":preds,"acc":acc,"precision":precision,"recall":recall,"reason":reasoning})
-`;
-
-const gauge=document.getElementById("gauge"),gctx=gauge.getContext("2d");
-function drawGauge(v){
-  const w=gauge.width=400,h=gauge.height=200;gctx.clearRect(0,0,w,h);
-  gctx.lineWidth=20;gctx.beginPath();gctx.strokeStyle="#082440";
-  gctx.arc(w/2,h*0.9,80,Math.PI,0,false);gctx.stroke();
-  const angle=Math.PI+v*Math.PI;
-  gctx.beginPath();gctx.strokeStyle=v>0.6?"#ff6b6b":v>0.3?"#00c6ff":"#00d38a";
-  gctx.arc(w/2,h*0.9,80,Math.PI,angle,false);gctx.stroke();
-  gctx.fillStyle="#fff";gctx.font="20px sans-serif";
-  gctx.fillText((v*100).toFixed(0)+"%",w/2-20,h*0.9+10);
+    // request common high-entropy values; this may prompt the UA client hint mechanism
+    const hints = await navigator.userAgentData.getHighEntropyValues([
+      "architecture","model","platform","platformVersion","uaFullVersion"
+    ]);
+    return hints;
+  }catch(e){ return null; }
 }
 
-async function runSim(){
- if(!pyodide){alert("Python not ready");return;}
- const n=parseInt(document.getElementById("count").value);
- const r=parseFloat(document.getElementById("ratio").value);
- setStatus("Running simulation…",60,"#ffb86b");
- const pycall=\`simulate(\${n},\${r})\`;
- const res=JSON.parse(await pyodide.runPythonAsync(pycall));
- displayResults(res);
- setStatus("Complete ✅",100,"#00d38a");
+async function getWebGLInfo(){
+  try{
+    const canvas = document.createElement('canvas');
+    const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+    if(!gl) return {};
+    const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+    if(!dbg) return {};
+    return {
+      renderer: safe(()=>gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL), null),
+      vendor: safe(()=>gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL), null)
+    };
+  } catch(e){ return {}; }
 }
 
-function displayResults(res){
- document.getElementById("results").style.display="block";
- const logs=document.getElementById("logs");
- logs.innerHTML="";
- let idx=0;
- function step(){
-   if(idx>=res.preds.length)return;
-   const e=res.preds[idx];
-   const color=e.pred=="malicious"?(e.label=="malicious"?"#ff6b6b":"#ffaa00"):"#00d38a";
-   logs.innerHTML+=\`<span style="color:\${color}">[\${e.pred.toUpperCase()}]</span> \${e.actions.join(", ")}<br>\`;
-   logs.scrollTop=logs.scrollHeight;
-   drawGauge(e.score);
-   idx++;setTimeout(step,80);
- }
- step();
- const rdiv=document.getElementById("reason");
- rdiv.textContent=res.reason;
- const accTrace={x:["Accuracy","Precision","Recall"],y:[res.acc,res.precision,res.recall],type:"bar",
-   marker:{color:["#00d38a","#00c6ff","#ffb86b"]}};
- Plotly.newPlot("plots",[accTrace],{title:"Detection Performance",yaxis:{range:[0,1]}},{responsive:true});
+function getCanvasFingerprint(){
+  try{
+    const c = document.createElement('canvas');
+    c.width = 280; c.height = 60;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#f7f7f7'; ctx.fillRect(0,0,280,60);
+    ctx.textBaseline = "top"; ctx.font = "16px 'Arial'";
+    ctx.fillStyle = '#091023'; ctx.fillText("Fingerprint test — 𝕋𝕖𝕤𝕥", 10, 10);
+    // draw shapes
+    ctx.fillStyle = "#ff6b6b"; ctx.fillRect(190,10,40,40);
+    const dataURL = c.toDataURL();
+    // hash simple
+    let hash = 0;
+    for(let i=0;i<dataURL.length;i++){ hash = ((hash<<5)-hash)+dataURL.charCodeAt(i); hash |= 0; }
+    return { dataURLPreview: dataURL.slice(0,120), hash: (hash>>>0).toString(16) };
+  } catch(e){ return {}; }
 }
 
-document.getElementById("simulate").onclick=runSim;
-document.getElementById("reset").onclick=()=>{document.getElementById("logs").innerHTML="";document.getElementById("reason").textContent="";setStatus("Ready ✅",100,"#00d38a");};
-document.getElementById("count").oninput=e=>{document.getElementById("countlbl").textContent=e.target.value;}
-document.getElementById("ratio").oninput=e=>{document.getElementById("ratlbl").textContent=e.target.value;}
+async function getBatteryInfo(){
+  if (!('getBattery' in navigator)) return null;
+  try{
+    const bat = await navigator.getBattery();
+    return { level: bat.level, charging: bat.charging, chargingTime: bat.chargingTime, dischargingTime: bat.dischargingTime };
+  } catch(e){ return null; }
+}
+
+function testMediaCodecs(){
+  try{
+    const video = document.createElement('video');
+    const types = [
+      "video/mp4; codecs='avc1.42E01E'",
+      "video/mp4; codecs='hev1'",
+      "video/mp4; codecs='vp09.00.10.08'",
+      "video/webm; codecs='vp9'",
+      "video/mp4; codecs='av01.0.05M.08'"
+    ];
+    const results = {};
+    types.forEach(t => { try { results[t] = !!video.canPlayType(t); } catch(e){ results[t]=false; } });
+    return results;
+  } catch(e){ return {}; }
+}
+
+function getFontsProbe(){
+  // gentle fonts probe (non-exhaustive)
+  const baseFonts = ["monospace","serif","sans-serif"];
+  const testFonts = ["Arial","Roboto","Noto Sans","Pixel","SF Pro Text","Segoe UI Emoji"];
+  const probe = {};
+  const span = document.createElement('span');
+  span.style.fontSize='28px'; span.style.position='absolute'; span.style.left='-9999px'; span.innerText='abcdefghi0123456789';
+  document.body.appendChild(span);
+  const defaultWidth = {};
+  baseFonts.forEach(b => {
+    span.style.fontFamily = b; defaultWidth[b] = span.offsetWidth;
+  });
+  testFonts.forEach(f => {
+    let found=false;
+    baseFonts.forEach(b => {
+      span.style.fontFamily = `'${f}',${b}`;
+      if (span.offsetWidth !== defaultWidth[b]) found = true;
+    });
+    probe[f] = found;
+  });
+  document.body.removeChild(span);
+  return probe;
+}
+
+// --------- main collect function ----------
+async function collectAll(){
+  const clientHints = await getClientHints();
+  const webgl = await getWebGLInfo();
+  const canvas = getCanvasFingerprint();
+  const battery = await getBatteryInfo();
+  const codecs = testMediaCodecs();
+  const fonts = getFontsProbe();
+
+  const data = {
+    collected_at: nowISO(),
+    userAgent: navigator.userAgent || null,
+    clientHints: clientHints,
+    platform: navigator.platform || null,
+    languages: navigator.languages || null,
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || null,
+    screen: {
+      width: screen.width, height: screen.height,
+      availWidth: screen.availWidth, availHeight: screen.availHeight,
+      colorDepth: screen.colorDepth || null,
+      devicePixelRatio: window.devicePixelRatio || null
+    },
+    hardware: {
+      deviceMemory: navigator.deviceMemory || null,
+      hardwareConcurrency: navigator.hardwareConcurrency || null
+    },
+    webgl, canvas, battery, codecs, fonts,
+    cookiesEnabled: navigator.cookieEnabled || false,
+    doNotTrack: navigator.doNotTrack || null,
+    referrer: document.referrer || null
+  };
+  return data;
+}
+
+// --------- UI wiring ----------
+const out = document.getElementById('output');
+const sendBtn = document.getElementById('sendBtn');
+const copyBtn = document.getElementById('copyBtn');
+const consentBox = document.getElementById('consent');
+const adminInput = document.getElementById('adminUrl');
+
+let lastData = null;
+
+consentBox.addEventListener('change', ()=>{
+  sendBtn.disabled = !consentBox.checked;
+});
+
+copyBtn.addEventListener('click', ()=>{
+  if (!lastData) return alert('No data yet');
+  const s = JSON.stringify(lastData, null, 2);
+  navigator.clipboard ? navigator.clipboard.writeText(s).then(()=>alert('Copied JSON to clipboard')) : (prompt('Copy JSON', s));
+});
+
+sendBtn.addEventListener('click', async ()=>{
+  if (!lastData) return alert('No data to send');
+  if (!consentBox.checked) return alert('Consent required');
+  const adminUrl = adminInput.value.trim();
+  if (!adminUrl) return alert('Please paste your admin endpoint URL (e.g. https://<project>.vercel.app/api/submit)');
+  try{
+    const resp = await fetch(adminUrl, { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(lastData) });
+    if (resp.ok) {
+      alert('Sent successfully to admin endpoint (server logs will show it).');
+    } else {
+      alert('Failed to send: ' + resp.status + ' ' + resp.statusText);
+    }
+  } catch(e){
+    alert('Send error: ' + e.message);
+  }
+});
+
+// run on load
+(async ()=>{
+  out.textContent = 'Gathering data — please wait...';
+  lastData = await collectAll();
+  out.textContent = JSON.stringify(lastData, null, 2);
+})();
 </script>
 </body>
 </html>
