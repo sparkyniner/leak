@@ -1,210 +1,183 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>WhisperLeak — Pyodide Benchmark (Responsive)</title>
-<script src="https://cdn.plot.ly/plotly-2.24.1.min.js"></script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sentinel-AI — LLM-Based Antivirus Simulator</title>
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/pyodide/v0.24.1/pyodide.js"></script>
 <style>
-  :root{--bg:#061026;--panel:#0b1b2a;--accent:#00c6ff;--muted:#9fb1c8;--good:#00d38a;--danger:#ff6b6b;}
-  body{margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Arial;background:var(--bg);color:#e6f2ff}
-  header{display:flex;justify-content:space-between;align-items:center;padding:18px 24px;border-bottom:1px solid rgba(255,255,255,0.05)}
-  .logo{background:#00476a;color:white;width:46px;height:46px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:18px}
-  .status{font-size:13px;color:var(--muted)}
-  .progressbar{width:120px;height:6px;background:rgba(255,255,255,0.08);border-radius:3px;overflow:hidden;margin-left:6px;display:inline-block;vertical-align:middle}
-  .progressbar div{height:6px;width:0;background:var(--accent);transition:width 0.3s}
-  .layout{display:grid;grid-template-columns:340px 1fr;gap:14px;padding:14px}
-  .panel{background:var(--panel);padding:14px;border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,0.4)}
-  button{background:var(--accent);border:none;color:#011;padding:8px 12px;border-radius:8px;font-weight:700;cursor:pointer}
-  button.secondary{background:transparent;border:1px solid rgba(255,255,255,0.06);color:var(--muted)}
-  #canvas{width:100%;height:300px;border-radius:8px;background:#06111a}
-  #feed{height:180px;overflow:auto;background:linear-gradient(180deg,#041022,#071426);padding:8px;border-radius:8px;font-family:monospace;font-size:13px}
-  table{width:100%;border-collapse:collapse;font-size:13px;color:#e6f2ff}
-  th,td{padding:6px;border-bottom:1px solid rgba(255,255,255,0.05);text-align:left}
-  .small{font-size:12px;color:var(--muted)}
+:root{--bg:#050e20;--panel:#0b1b2a;--accent:#00c6ff;--good:#00d38a;--danger:#ff6b6b;--muted:#aabdd6;}
+body{margin:0;font-family:Inter,system-ui;background:var(--bg);color:#e6f2ff}
+header{display:flex;justify-content:space-between;align-items:center;padding:16px 22px;border-bottom:1px solid rgba(255,255,255,0.08);}
+.logo{display:flex;align-items:center;gap:10px;font-weight:700}
+.logo div{width:38px;height:38px;background:linear-gradient(135deg,#003b53,#00c6ff);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;color:white}
+.status{font-size:13px;color:var(--muted)}
+.progress{width:120px;height:6px;background:rgba(255,255,255,0.1);border-radius:3px;overflow:hidden;display:inline-block;margin-left:6px;vertical-align:middle}
+.progress div{height:6px;width:0;background:var(--accent);transition:width .3s}
+.layout{display:grid;grid-template-columns:360px 1fr;gap:14px;padding:14px}
+.panel{background:var(--panel);padding:14px;border-radius:10px;box-shadow:0 6px 18px rgba(0,0,0,.4)}
+button{background:var(--accent);border:none;color:#011;padding:8px 12px;border-radius:8px;font-weight:700;cursor:pointer;margin-right:8px}
+button.secondary{background:transparent;border:1px solid rgba(255,255,255,0.1);color:var(--muted)}
+#logs{height:160px;overflow:auto;background:#081425;padding:8px;border-radius:8px;font-family:monospace;font-size:13px}
+#reason{background:#081425;padding:8px;border-radius:8px;font-size:13px;min-height:100px}
+canvas{width:100%;height:200px;border-radius:8px;background:#060f20}
+.small{font-size:12px;color:var(--muted)}
 </style>
 </head>
 <body>
 <header>
-  <div style="display:flex;align-items:center;gap:12px">
-    <div class="logo">WL</div>
-    <div>
-      <div><b>WhisperLeak — Pyodide Benchmark</b></div>
-      <div class="small">Synthetic timing-leak simulation (runs entirely in your browser)</div>
-    </div>
-  </div>
-  <div class="status">
-    <span id="pystatus">Initializing…</span>
-    <span class="progressbar"><div id="progressfill"></div></span>
-  </div>
+ <div class="logo"><div>AV</div><span>Sentinel-AI Simulator</span></div>
+ <div class="status">Status: <span id="statustxt">Initializing…</span>
+   <span class="progress"><div id="progressbar"></div></span>
+ </div>
 </header>
 
 <div class="layout">
   <div class="panel">
     <h3>Controls</h3>
-    <label>Conversations/topic: <b id="n_per_label">100</b></label>
-    <input id="n_per" type="range" min="50" max="400" value="100" step="50"/>
-    <label>Tokens/conversation: <b id="n_tok_label">50</b></label>
-    <input id="n_tok" type="range" min="20" max="120" value="50" step="10"/>
-    <label><input type="checkbox" id="mode_token" checked/> token mode</label>
-    <label><input type="checkbox" id="mode_chunk" checked/> chunk mode</label>
-    <hr/>
-    <label><input type="checkbox" id="use_pad"/> padding</label>
-    <input id="pad_to" type="number" value="100" min="20" max="300" style="width:80px"/>
-    <br/>
-    <label><input type="checkbox" id="use_batch"/> batching</label>
-    <input id="batch_mean" type="number" value="4" min="1" max="12" style="width:80px"/>
-    <br/>
-    <label><input type="checkbox" id="use_dummy"/> dummy</label>
-    <input id="dummy_rate" type="number" value="0.1" min="0" max="1" step="0.01" style="width:80px"/>
-    <hr/>
-    <button id="preview">Preview stream</button>
-    <button id="run">Run benchmark</button>
+    <label>Behavior count: <b id="countlbl">100</b></label>
+    <input id="count" type="range" min="50" max="300" value="100" step="25"/><br>
+    <label>Malicious ratio: <b id="ratlbl">0.4</b></label>
+    <input id="ratio" type="range" min="0" max="1" value="0.4" step="0.05"/><br><br>
+    <button id="simulate">Run Simulation</button>
     <button id="reset" class="secondary">Reset</button>
-    <p class="small" id="infotxt">Wait until status shows “Ready” before running.</p>
+    <p class="small">This demo synthetically generates benign &amp; malicious behaviors, feeds them to a simulated “LLM engine,”
+    and visualizes detection accuracy, live events, and reasoning output — all in your browser.</p>
   </div>
+
   <div style="display:flex;flex-direction:column;gap:12px">
     <div class="panel">
-      <h3>Live token stream</h3>
-      <canvas id="canvas"></canvas>
-      <div id="feed"></div>
+      <h3>Live Activity Feed</h3>
+      <canvas id="gauge"></canvas>
+      <div id="logs"></div>
     </div>
+
     <div class="panel" id="results" style="display:none">
-      <h3>Results</h3>
-      <div id="summary" class="small"></div>
-      <div id="acc_plot"></div>
-      <div id="cost_plot"></div>
-      <table><thead><tr><th>train→test</th><th>defense</th><th>acc</th><th>bw↑</th><th>lat↑</th><th>MI</th></tr></thead><tbody id="res_tbody"></tbody></table>
+      <h3>Detection Metrics</h3>
+      <div id="plots"></div>
+      <h4>Model Reasoning</h4>
+      <div id="reason"></div>
     </div>
   </div>
 </div>
 
-<footer style="padding:12px 18px" class="small">
-  Ethical note: This is a <b>synthetic defensive demo</b>. No real data, APIs, or traffic are used.
+<footer style="padding:12px 20px" class="small">
+All data are synthetic. Educational simulation of an LLM-driven antivirus. No real malware involved.
 </footer>
 
 <script type="module">
-import { loadPyodide } from "https://cdn.jsdelivr.net/pyodide/v0.24.1/pyodide.js";
-const statusEl=document.getElementById("pystatus");
-const fill=document.getElementById("progressfill");
-function setStatus(txt,pct=0,color="#00c6ff"){statusEl.textContent=txt;fill.style.width=pct+"%";fill.style.background=color;}
+const stat=document.getElementById("statustxt"),bar=document.getElementById("progressbar");
+function setStatus(t,p=0,c="#00c6ff"){stat.textContent=t;bar.style.width=p+"%";bar.style.background=c;}
 
 let pyodide=null;
-async function init(){
+async function initPyodide(){
   try{
-    setStatus("Downloading Pyodide…",10);
+    setStatus("Downloading Pyodide…",20);
     pyodide=await loadPyodide({indexURL:"https://cdn.jsdelivr.net/pyodide/v0.24.1/"});
     setStatus("Loading numpy…",60);
     await pyodide.loadPackage(["numpy"]);
-    setStatus("Compiling simulation code…",80);
-    await pyodide.runPythonAsync(pythonCode);
+    setStatus("Compiling engine…",80);
+    await pyodide.runPythonAsync(pythonCore);
     setStatus("Ready ✅",100,"#00d38a");
-  }catch(e){
-    console.error(e);setStatus("Init error",100,"#ff6b6b");
-  }
+  }catch(e){console.error(e);setStatus("Error",100,"#ff6b6b");}
 }
-init();
+initPyodide();
 
-const pythonCode=`import numpy as np,math,json
-RNG=np.random.default_rng(42)
-def gen(topic,n=60):
- t=[]
- for i in range(n):
-  if topic==0:s=int(max(5,RNG.normal(40,10)));d=RNG.exponential(0.02)
-  elif topic==1:s=int(max(5,RNG.normal(120,40)));d=RNG.exponential(0.06)
-  else:s=int(max(5,RNG.normal(70,25)));d=RNG.exponential(0.04)
-  t.append((s,float(d)))
- return t
-def pad(tr,p=100):return[(max(s,p),d)for s,d in tr]
-def batch(tr,m=4):
- o=[];i=0
- while i<len(tr):
-  b=max(1,int(RNG.poisson(m)));S=0
-  for j in range(b):
-   if i+j>=len(tr):break;S+=tr[i+j][0]
-  o.append((S,tr[i][1]));i+=b
- return o
-def dummy(tr,r=0.1):
- o=[]
- for s,d in tr:
-  o.append((s,d))
-  if RNG.random()<r:o.append((10,d*0.5))
- return o
-def feat(tr):
- s=np.array([x for x,_ in tr]);t=np.array([y for _,y in tr])
- return [len(s),float(s.mean()),float(t.mean()),float(np.std(s)),float(np.std(t))]
-def knn(X,Y,X2,k=3):
- X=np.array(X);Y=np.array(Y);X2=np.array(X2);p=[]
- for x in X2:
-  d=np.sqrt(((X-x)**2).sum(1));idx=d.argsort()[:k]
-  vals,cts=np.unique(Y[idx],return_counts=True);p.append(int(vals[cts.argmax()]))
- return p
-def bench_json(nc=80,nt=40):
- out=[]
- for mode in ["token","chunk"]:
-  X=[];Y=[]
-  for tp in range(3):
-   for _ in range(nc):
-    tr=gen(tp,nt)
-    X.append(feat(tr));Y.append(tp)
-  m=len(X)//2;Xt=X[:m];Yt=Y[:m];Xv=X[m:];Yv=Y[m:]
-  preds=knn(Xt,Yt,Xv);acc=float((np.array(preds)==np.array(Yv)).mean())
-  out.append({"mode":mode,"def":"none","acc":acc,"bw":0,"lat":0,"mi":0})
- return json.dumps(out)
-def preview_json():
- ev=[];t=0
- for c in range(5):
-  tr=gen(RNG.integers(0,3),40);ts=0
-  for s,d in tr:ts+=d;ev.append({"t_ms":int(ts*1000),"size":s,"topic":c%3})
- return json.dumps(ev)`;
-
-const canvas=document.getElementById("canvas"),ctx=canvas.getContext("2d");
-function resize(){canvas.width=canvas.clientWidth*devicePixelRatio;canvas.height=canvas.clientHeight*devicePixelRatio;ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);}
-window.onresize=resize;resize();
-function bg(){ctx.fillStyle="#06111a";ctx.fillRect(0,0,canvas.width,canvas.height);}
-bg();
-
-const feed=document.getElementById("feed");
-let events=[],anim=null,start=null,idx=0;
-function frame(){
- if(!start)return;const now=performance.now()-start;bg();
- const cols=["#00d38a","#00c6ff","#ffb86b"];
- for(let e of events.filter(e=>e.t_ms<=now)){
-  const x=(e.t_ms/4000)*canvas.clientWidth;const y=60+e.topic*60;
-  ctx.beginPath();ctx.fillStyle=cols[e.topic];ctx.arc(x,y,e.size/60,0,6.28);ctx.fill();
- }
- while(idx<events.length&&events[idx].t_ms<=now){
-  feed.innerHTML+=\`[\${(events[idx].t_ms/1000).toFixed(3)}s] size=\${events[idx].size} topic=\${events[idx].topic}<br>\`;
-  idx++;
-  feed.scrollTop=feed.scrollHeight;
- }
- anim=requestAnimationFrame(frame);
+const pythonCore=`
+import numpy as np, json, random
+BEHAVIORS={
+ "benign":["opened file","read config","sent ping","displayed GUI","checked update","accessed cache"],
+ "ransomware":["encrypted file","deleted backup","renamed extension","dropped note"],
+ "keylogger":["hooked keyboard","logged keystroke","opened hidden socket"],
+ "miner":["high cpu","connected mining pool","downloaded payload"]
 }
-async function preview(){
- if(!pyodide){alert("Not ready");return;}
- feed.innerHTML="";bg();setStatus("Running preview…",70);
- const pyres=await pyodide.runPythonAsync("preview_json()");events=JSON.parse(pyres);start=performance.now();idx=0;frame();setStatus("Ready ✅",100,"#00d38a");
+def gen_dataset(n=100,mal_ratio=0.4):
+ data=[]
+ for _ in range(n):
+  if random.random()<mal_ratio:
+   typ=random.choice(["ransomware","keylogger","miner"])
+   acts=random.sample(BEHAVIORS[typ],k=min(3,len(BEHAVIORS[typ])))
+   label="malicious"
+  else:
+   acts=random.sample(BEHAVIORS["benign"],k=min(3,len(BEHAVIORS["benign"])))
+   label="benign"
+  data.append({"actions":acts,"label":label})
+ return data
+
+def llm_detect(event):
+ text=" ".join(event["actions"]).lower()
+ score=0
+ if any(k in text for k in ["encrypt","backup","extension"]): score+=0.6
+ if any(k in text for k in ["keyboard","keystroke"]): score+=0.5
+ if "cpu" in text or "pool" in text: score+=0.4
+ if "ping" in text or "cache" in text: score-=0.3
+ return max(0,min(1,0.5+score))
+def simulate(n=100,mal_ratio=0.4):
+ data=gen_dataset(n,mal_ratio)
+ preds=[]
+ for ev in data:
+  sc=llm_detect(ev)
+  pred="malicious" if sc>0.6 else "benign"
+  preds.append({"actions":ev["actions"],"label":ev["label"],"pred":pred,"score":sc})
+ acc=sum(1 for p in preds if p["label"]==p["pred"])/len(preds)
+ tp=sum(1 for p in preds if p["label"]=="malicious" and p["pred"]=="malicious")
+ fp=sum(1 for p in preds if p["label"]=="benign" and p["pred"]=="malicious")
+ fn=sum(1 for p in preds if p["label"]=="malicious" and p["pred"]=="benign")
+ precision=tp/(tp+fp+1e-9); recall=tp/(tp+fn+1e-9)
+ reasoning=f"LLM detected patterns associated with encryption and keylogging; precision={precision:.2f}, recall={recall:.2f}."
+ return json.dumps({"preds":preds,"acc":acc,"precision":precision,"recall":recall,"reason":reasoning})
+`;
+
+const gauge=document.getElementById("gauge"),gctx=gauge.getContext("2d");
+function drawGauge(v){
+  const w=gauge.width=400,h=gauge.height=200;gctx.clearRect(0,0,w,h);
+  gctx.lineWidth=20;gctx.beginPath();gctx.strokeStyle="#082440";
+  gctx.arc(w/2,h*0.9,80,Math.PI,0,false);gctx.stroke();
+  const angle=Math.PI+v*Math.PI;
+  gctx.beginPath();gctx.strokeStyle=v>0.6?"#ff6b6b":v>0.3?"#00c6ff":"#00d38a";
+  gctx.arc(w/2,h*0.9,80,Math.PI,angle,false);gctx.stroke();
+  gctx.fillStyle="#fff";gctx.font="20px sans-serif";
+  gctx.fillText((v*100).toFixed(0)+"%",w/2-20,h*0.9+10);
 }
 
-async function runBench(){
- if(!pyodide){alert("Not ready");return;}
- setStatus("Running benchmark…",60,"#ffb86b");
- const pyres=await pyodide.runPythonAsync("bench_json()");
- const res=JSON.parse(pyres);
- document.getElementById("results").style.display="block";
- const tbody=document.getElementById("res_tbody");tbody.innerHTML="";
- for(const r of res){
-  const tr=document.createElement("tr");
-  tr.innerHTML=\`<td>\${r.mode}</td><td>\${r.def}</td><td>\${r.acc.toFixed(3)}</td><td>\${r.bw}</td><td>\${r.lat}</td><td>\${r.mi}</td>\`;
-  tbody.appendChild(tr);
- }
- Plotly.newPlot('acc_plot',[{x:res.map(r=>r.mode),y:res.map(r=>r.acc),type:'bar',marker:{color:'#00c6ff'}}],{title:"Accuracy by mode"});
+async function runSim(){
+ if(!pyodide){alert("Python not ready");return;}
+ const n=parseInt(document.getElementById("count").value);
+ const r=parseFloat(document.getElementById("ratio").value);
+ setStatus("Running simulation…",60,"#ffb86b");
+ const pycall=\`simulate(\${n},\${r})\`;
+ const res=JSON.parse(await pyodide.runPythonAsync(pycall));
+ displayResults(res);
  setStatus("Complete ✅",100,"#00d38a");
 }
 
-document.getElementById("preview").onclick=preview;
-document.getElementById("run").onclick=runBench;
-document.getElementById("reset").onclick=()=>{feed.innerHTML="";bg();setStatus("Ready ✅",100,"#00d38a");};
+function displayResults(res){
+ document.getElementById("results").style.display="block";
+ const logs=document.getElementById("logs");
+ logs.innerHTML="";
+ let idx=0;
+ function step(){
+   if(idx>=res.preds.length)return;
+   const e=res.preds[idx];
+   const color=e.pred=="malicious"?(e.label=="malicious"?"#ff6b6b":"#ffaa00"):"#00d38a";
+   logs.innerHTML+=\`<span style="color:\${color}">[\${e.pred.toUpperCase()}]</span> \${e.actions.join(", ")}<br>\`;
+   logs.scrollTop=logs.scrollHeight;
+   drawGauge(e.score);
+   idx++;setTimeout(step,80);
+ }
+ step();
+ const rdiv=document.getElementById("reason");
+ rdiv.textContent=res.reason;
+ const accTrace={x:["Accuracy","Precision","Recall"],y:[res.acc,res.precision,res.recall],type:"bar",
+   marker:{color:["#00d38a","#00c6ff","#ffb86b"]}};
+ Plotly.newPlot("plots",[accTrace],{title:"Detection Performance",yaxis:{range:[0,1]}},{responsive:true});
+}
+
+document.getElementById("simulate").onclick=runSim;
+document.getElementById("reset").onclick=()=>{document.getElementById("logs").innerHTML="";document.getElementById("reason").textContent="";setStatus("Ready ✅",100,"#00d38a");};
+document.getElementById("count").oninput=e=>{document.getElementById("countlbl").textContent=e.target.value;}
+document.getElementById("ratio").oninput=e=>{document.getElementById("ratlbl").textContent=e.target.value;}
 </script>
 </body>
 </html>
