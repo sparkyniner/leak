@@ -1,0 +1,625 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>WhisperLeak — Pyodide Demo (Synthetic)</title>
+<style>
+  :root{
+    --bg:#071126; --panel:#0b1b2a; --accent:#00c6ff; --muted:#9fb1c8; --good:#00d38a;
+    --danger:#ff6b6b; --glass: rgba(255,255,255,0.03);
+  }
+  body{margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,'Helvetica Neue',Arial;background:var(--bg);color:#dbe9f8}
+  header{padding:18px 28px;display:flex;align-items:center;gap:18px}
+  h1{margin:0;font-size:18px}
+  .container{display:grid;grid-template-columns:360px 1fr;gap:18px;padding:10px 18px}
+  .panel{background:var(--panel);padding:12px;border-radius:12px;box-shadow:0 6px 20px rgba(0,0,0,0.6)}
+  .controls label{display:block;font-size:13px;color:var(--muted);margin-top:10px}
+  .controls input[type=range]{width:100%}
+  .controls input[type=number]{width:100%}
+  button{background:var(--accent);border:none;padding:8px 12px;border-radius:8px;color:#012;cursor:pointer;font-weight:700}
+  button.secondary{background:transparent;border:1px solid rgba(255,255,255,0.06);color:var(--muted)}
+  #canvas{width:100%;height:360px;border-radius:8px;background:#071226;display:block}
+  #feed{height:220px;overflow:auto;background:linear-gradient(180deg,#071426, #041022);padding:8px;border-radius:8px;font-family:monospace;font-size:12px}
+  .row{display:flex;gap:10px}
+  table{width:100%;border-collapse:collapse;color:#dbe9f8}
+  th,td{padding:6px;border-bottom:1px solid rgba(255,255,255,0.03);text-align:left;font-size:13px}
+  .small{font-size:12px;color:var(--muted)}
+  footer{padding:12px 18px;color:var(--muted);font-size:12px}
+  .badge{background:var(--glass);padding:6px 8px;border-radius:8px;font-weight:600}
+</style>
+</head>
+<body>
+<header>
+  <div style="display:flex;align-items:center;gap:12px">
+    <div class="badge">WhisperLeak (Pyodide Demo)</div>
+  </div>
+  <div style="flex:1"></div>
+  <div class="small">Client-side demo — synthetic & defensive only</div>
+</header>
+
+<div class="container">
+  <!-- LEFT: controls -->
+  <div class="panel controls">
+    <h2 style="margin:0 0 8px 0">Controls</h2>
+
+    <label>Number of conversations per topic: <span id="n_per_topic_label">300</span></label>
+    <input id="n_per_topic" type="range" min="50" max="800" value="300" step="50" />
+
+    <label>Tokens per conversation: <span id="n_tokens_label">80</span></label>
+    <input id="n_tokens" type="range" min="20" max="200" value="80" step="10" />
+
+    <label>Streaming modes (train/test):</label>
+    <div class="row" style="margin-bottom:8px">
+      <label><input type="checkbox" id="mode_token" checked/> token</label>
+      <label style="margin-left:6px"><input type="checkbox" id="mode_chunk" checked/> chunk</label>
+    </div>
+
+    <label>Defense toggles</label>
+    <div class="row" style="margin-bottom:6px">
+      <label><input type="checkbox" id="use_padding" /> Padding</label>
+      <input id="pad_to" type="number" value="100" min="20" max="300" style="width:100px;margin-left:8px" />
+    </div>
+    <div class="row" style="margin-bottom:6px">
+      <label><input type="checkbox" id="use_batch" /> Random batching</label>
+      <input id="batch_mean" type="number" value="4" min="1" max="12" style="width:100px;margin-left:8px" />
+    </div>
+    <div class="row" style="margin-bottom:12px">
+      <label><input type="checkbox" id="use_dummy" /> Dummy insertion</label>
+      <input id="dummy_rate" type="number" value="0.12" min="0" max="1" step="0.01" style="width:100px;margin-left:8px" />
+    </div>
+
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <button id="run_btn">Run full benchmark</button>
+      <button id="preview_btn" class="secondary">Generate sample stream</button>
+    </div>
+
+    <div style="margin-top:12px">
+      <div class="small">Benchmark outputs (shown live):</div>
+      <ul class="small">
+        <li>Attacker accuracy (train/test transfer)</li>
+        <li>Bandwidth & latency proxies</li>
+        <li>Mutual information estimate</li>
+        <li>Statistical test (paired t) across seeds</li>
+      </ul>
+    </div>
+
+    <hr style="border:none;height:1px;background:rgba(255,255,255,0.03);margin:12px 0" />
+    <div class="small">Pyodide status: <span id="pystatus">loading...</span></div>
+    <div style="height:6px"></div>
+    <div class="small">Deploy note: Save as <code>index.html</code> and host as static site (Vercel / GitHub Pages).</div>
+  </div>
+
+  <!-- RIGHT: main content -->
+  <div style="display:flex;flex-direction:column;gap:12px">
+    <div class="panel">
+      <h3 style="margin:0 0 6px 0">Live token stream & packet feed</h3>
+      <canvas id="canvas"></canvas>
+      <div id="feed" style="margin-top:8px"></div>
+    </div>
+
+    <div class="panel" id="results_panel" style="display:none">
+      <h3 style="margin:0 0 8px 0">Benchmark results (live)</h3>
+      <div id="summary" class="small"></div>
+      <div id="plots" style="margin-top:8px"></div>
+      <h4 style="margin:10px 0 6px">Detailed table</h4>
+      <div style="max-height:260px;overflow:auto">
+        <table id="results_table">
+          <thead><tr><th>train→test</th><th>defense</th><th>param</th><th>acc</th><th>bw↑</th><th>lat↑</th><th>mi</th><th>p-val</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <div class="small">Ethics: This demo is synthetic & defensive. Do not adapt for attacking real services. Code runs entirely client-side via Pyodide.</div>
+</footer>
+
+<!-- Load Pyodide -->
+<script type="module">
+  // Load Pyodide
+  const pystatus = document.getElementById("pystatus");
+  let pyodideReady = false;
+  let pyodide = null;
+
+  async function loadPyodideAndPackages(){
+    pystatus.textContent = "loading pyodide...";
+    // Use Pyodide CDN
+    pyodide = await loadPyodide({indexURL: "https://cdn.jsdelivr.net/pyodide/v0.24.1/full/"});
+    pystatus.textContent = "Pyodide loaded, installing numpy...";
+    await pyodide.loadPackage(["numpy"]);
+    // Expose a small numpy alias in pyodide namespace for convenience
+    await pyodide.runPythonAsync(`
+import js
+import numpy as np
+print("numpy available, version", np.__version__)
+`);
+    pystatus.textContent = "ready";
+    pyodideReady = true;
+  }
+
+  // dynamically import Pyodide
+  import("https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js").then(() => {
+    loadPyodideAndPackages().catch((err)=>{
+      pystatus.textContent = "error loading pyodide";
+      console.error(err);
+    });
+  });
+
+  // Python code to run inside Pyodide (as a multiline string)
+  const pyCode = `
+# Pyodide Python simulation code (synthetic, defensive)
+import numpy as np, math, json
+RNG = np.random.default_rng(42)
+
+def generate_conversation(topic_id, n_tokens=80, mode="token"):
+    trace=[]
+    for i in range(n_tokens):
+        if topic_id==0:
+            size = int(max(5, RNG.normal(40,10)))
+            base_delay = 0.018; burst_prob = 0.12
+        elif topic_id==1:
+            size = int(max(8, RNG.normal(120,40)))
+            base_delay = 0.06; burst_prob = 0.45
+        else:
+            size = int(max(5, RNG.normal(70,25)))
+            base_delay = 0.035; burst_prob = 0.25
+        if RNG.random() < 0.03:
+            size = int(size * RNG.uniform(2.0,3.0))
+        if mode=="token":
+            if RNG.random() < burst_prob:
+                iat = float(max(0.003, RNG.exponential(base_delay/4)))
+            else:
+                iat = float(max(0.003, RNG.exponential(base_delay)))
+        else:
+            if RNG.random() < 0.2:
+                iat = float(max(0.01, RNG.exponential(base_delay*4)))
+            else:
+                iat = float(max(0.003, RNG.exponential(base_delay)))
+        trace.append((int(size), float(iat)))
+    return trace
+
+def fixed_padding(trace, pad_to=100):
+    return [(max(sz,pad_to), dt) for sz,dt in trace]
+
+def randomized_batching(trace, mean_batch=4):
+    out=[]; i=0; n=len(trace)
+    while i<n:
+        blen = max(1, int(RNG.poisson(mean_batch)))
+        s_sum=0
+        dt = trace[i][1]
+        for j in range(blen):
+            if i+j>=n: break
+            s_sum += trace[i+j][0]
+        out.append((int(s_sum), float(dt)))
+        i += blen
+    return out
+
+def dummy_insertion(trace, dummy_rate=0.12):
+    out=[]
+    for sz,dt in trace:
+        out.append((sz,dt))
+        if RNG.random() < dummy_rate:
+            out.append((int(max(5, RNG.normal(12,3))), float(max(0.003, dt*RNG.uniform(0.08,0.4)))))
+    return out
+
+def apply_defense(trace, use_padding=False, pad_to=100, use_batch=False, batch_mean=4, use_dummy=False, dummy_rate=0.12):
+    t = trace
+    if use_batch:
+        t = randomized_batching(t, mean_batch=batch_mean)
+    if use_padding:
+        t = fixed_padding(t, pad_to=pad_to)
+    if use_dummy:
+        t = dummy_insertion(t, dummy_rate=dummy_rate)
+    return t
+
+def featurize(trace):
+    sizes = np.array([s for s,_ in trace], dtype=float)
+    iats = np.array([t for _,t in trace], dtype=float)
+    if sizes.size==0:
+        return [0]*11
+    hist_bins = [0,30,60,100,200,1000]
+    hist,_ = np.histogram(sizes, bins=hist_bins)
+    feat = [
+        float(len(sizes)),
+        float(sizes.mean()), float(np.median(sizes)), float(sizes.std()), float(sizes.max()),
+        float(iats.mean()), float(np.median(iats)), float(iats.std()),
+        float((iats < (iats.mean()+1e-9)*0.5).mean()),
+        float(hist[1]), float(hist[2])
+    ]
+    return feat
+
+# Simple KNN attacker implemented in numpy (no sklearn)
+def knn_train_predict(X_train, y_train, X_test, k=5):
+    # X_train, X_test: lists/arrays of shape (n_samples, n_features)
+    Xtr = np.array(X_train, dtype=float)
+    Xte = np.array(X_test, dtype=float)
+    ytr = np.array(y_train, dtype=int)
+    preds=[]
+    for xt in Xte:
+        dists = np.sqrt(np.sum((Xtr - xt)**2, axis=1))
+        idx = np.argpartition(dists, k)[:k]
+        vals,counts = np.unique(ytr[idx], return_counts=True)
+        pred = vals[np.argmax(counts)]
+        preds.append(int(pred))
+    return preds
+
+def mutual_info_estimate(X, y, n_bins=8):
+    # coarse mutual information: discretize each feature into bins and compute mean MI across features
+    X = np.array(X, dtype=float)
+    y = np.array(y, dtype=int)
+    mis=[]
+    for i in range(X.shape[1]):
+        xi = X[:,i]
+        # discretize xi
+        try:
+            bins = np.linspace(xi.min(), xi.max()+1e-9, n_bins+1)
+            xq = np.digitize(xi, bins) - 1
+            # compute joint distribution
+            joint = {}
+            for a,b in zip(xq,y):
+                joint[(int(a),int(b))] = joint.get((int(a),int(b)),0)+1
+            px = {}
+            py = {}
+            n = len(y)
+            for (a,b),cnt in joint.items():
+                px[a] = px.get(a,0)+cnt
+                py[b] = py.get(b,0)+cnt
+            mi = 0.0
+            for (a,b),cnt in joint.items():
+                pxy = cnt / n
+                px_ = px[a] / n
+                py_ = py[b] / n
+                mi += pxy * math.log((pxy+1e-12)/(px_*py_+1e-12) + 1e-12)
+            mis.append(mi)
+        except Exception:
+            mis.append(0.0)
+    return float(np.mean(mis))
+
+# dataset builder
+def build_dataset(n_per_topic=300, n_tokens=80, mode="token"):
+    traces=[]; feats=[]; labels=[]
+    for topic in range(3):
+        for _ in range(n_per_topic):
+            tr = generate_conversation(topic, n_tokens=n_tokens, mode=mode)
+            traces.append(tr)
+            feats.append(featurize(tr))
+            labels.append(int(topic))
+    return traces, feats, labels
+
+# wrapper to run a benchmark sweep (single seed)
+def run_benchmark(n_per_topic=300, n_tokens=80, modes=["token","chunk"], defenses=None):
+    if defenses is None:
+        defenses = [
+            {"name":"none"},
+            {"name":"padding","pad_to":100},
+            {"name":"batching","batch_mean":4},
+            {"name":"dummy","dummy_rate":0.12},
+            {"name":"combined","pad_to":100,"batch_mean":4,"dummy_rate":0.12}
+        ]
+    results=[]
+    # build base datasets per mode
+    datasets={}
+    for mode in modes:
+        traces, feats, labels = build_dataset(n_per_topic=n_per_topic, n_tokens=n_tokens, mode=mode)
+        datasets[mode] = {"traces":traces,"feats":feats,"labels":labels}
+    # for each train_mode/test_mode pair
+    for train_mode in modes:
+        for test_mode in modes:
+            # train KNN attacker on train_mode features (use half as 'train', half as test for internal baseline)
+            data_train = datasets[train_mode]
+            n = len(data_train["feats"])
+            half = n//2
+            X_train = data_train["feats"][:half]
+            y_train = data_train["labels"][:half]
+            X_hold = data_train["feats"][half:]
+            y_hold = data_train["labels"][half:]
+            # baseline accuracy on hold set
+            preds_hold = knn_train_predict(X_train, y_train, X_hold, k=5)
+            baseline_acc = float(sum(np.array(preds_hold)==np.array(y_hold))/len(y_hold))
+            # now evaluate defenses applied to test_mode traces
+            data_test = datasets[test_mode]
+            traces_test = data_test["traces"]
+            feats_test = data_test["feats"]
+            labels_test = data_test["labels"]
+            for d in defenses:
+                # apply defense to all test traces
+                defended_traces = []
+                for tr in traces_test:
+                    if d["name"]=="none":
+                        dtr = tr
+                    elif d["name"]=="padding":
+                        dtr = fixed_padding(tr, pad_to=d.get("pad_to",100))
+                    elif d["name"]=="batching":
+                        dtr = randomized_batching(tr, mean_batch=d.get("batch_mean",4))
+                    elif d["name"]=="dummy":
+                        dtr = dummy_insertion(tr, dummy_rate=d.get("dummy_rate",0.12))
+                    elif d["name"]=="combined":
+                        dtr = apply_defense(tr, use_padding=True, pad_to=d.get("pad_to",100), use_batch=True, batch_mean=d.get("batch_mean",4), use_dummy=True, dummy_rate=d.get("dummy_rate",0.12))
+                    else:
+                        dtr = tr
+                    defended_traces.append(dtr)
+                X_def = [featurize(t) for t in defended_traces]
+                # evaluate by predicting with model trained on train_mode training set
+                # use last third of test set as held-out test to compute acc (simple)
+                m = len(X_def)
+                if m<3: continue
+                test_slice = slice(m//3, m//3 + (m//3))
+                X_def_test = X_def[test_slice]
+                y_def_test = labels_test[test_slice]
+                preds_def = knn_train_predict(X_train, y_train, X_def_test, k=5)
+                acc_def = float(sum(np.array(preds_def)==np.array(y_def_test))/len(y_def_test))
+                # costs: bandwidth & latency proxies computed on small sample
+                sample_idx = list(range(0, min(80, len(traces_test))))
+                bw_orig = []; bw_def=[]
+                lat_orig=[]; lat_def=[]
+                for i in sample_idx:
+                    tr1 = traces_test[i]
+                    tr2 = defended_traces[i]
+                    orig_bytes = sum([s for s,_ in tr1])
+                    def_bytes = sum([s for s,_ in tr2])
+                    bw_orig.append(orig_bytes); bw_def.append(def_bytes)
+                    lat_orig.append(sum([t for _,t in tr1])); lat_def.append(sum([t for _,t in tr2]))
+                mean_bw_frac = (np.mean(bw_def)-np.mean(bw_orig))/(np.mean(bw_orig)+1e-9)
+                mean_lat_frac = (np.mean(lat_def)-np.mean(lat_orig))/(np.mean(lat_orig)+1e-9)
+                # mutual info coarse
+                mi = mutual_info_estimate(X_def, labels_test, n_bins=8)
+                results.append({
+                    "train_mode":train_mode,
+                    "test_mode":test_mode,
+                    "defense":d["name"],
+                    "param": json.dumps({k:v for k,v in d.items() if k!='name'}),
+                    "baseline_acc": baseline_acc,
+                    "acc": acc_def,
+                    "bw_frac": float(mean_bw_frac),
+                    "lat_frac": float(mean_lat_frac),
+                    "mi": float(mi)
+                })
+    return results
+
+# streaming generator for preview: returns a small list of packet dicts
+def generate_preview_stream(n_conversations=6, tokens_each=60, mode="token", defenses=None):
+    # generate several concurrent traces and interleave their tokens in time order
+    convs=[]
+    for i in range(n_conversations):
+        topic = int(RNG.integers(0,3))
+        tr = generate_conversation(topic, tokens_each, mode=mode)
+        if defenses:
+            tr = apply_defense(tr, **defenses)
+        convs.append({"topic":topic,"trace":tr,"id":f"conv{i}"})
+    # produce event list with cumulative times
+    events=[]
+    for c in convs:
+        t_acc = 0.0
+        for idx,(sz,iat) in enumerate(c["trace"]):
+            t_acc += iat
+            events.append({"t":t_acc,"conv":c["id"],"topic":c["topic"],"size":int(sz),"iat":float(iat),"token_idx":idx})
+    events_sorted = sorted(events, key=lambda x: x["t"])
+    # normalize times to start from zero and convert to ms for JS convenience
+    start = events_sorted[0]["t"] if len(events_sorted)>0 else 0.0
+    for e in events_sorted:
+        e["t_ms"] = int((e["t"] - start)*1000)
+    return events_sorted
+`;
+
+  // convenience wrapper to run python code and make functions available
+  async function initPython() {
+    if(!pyodide) return;
+    await pyodide.runPythonAsync(pyCode);
+    // expose callables
+    // run_benchmark: call pyodide.runPython("run_benchmark(... )") but better to call via globals
+    window.py = pyodide.globals;
+  }
+
+  // wait for pyodide fully loaded then init our python code
+  (async ()=>{
+    // poll until pyodide variable is set
+    while(typeof pyodide === "undefined" || !pyodideReady){
+      await new Promise(r=>setTimeout(r,200));
+    }
+    await initPython();
+    document.getElementById("pystatus").textContent = "ready";
+  })();
+
+  // UI bindings
+  const nPerEl = document.getElementById("n_per_topic");
+  const nPerLabel = document.getElementById("n_per_topic_label");
+  nPerEl.addEventListener("input", ()=>nPerLabel.textContent = nPerEl.value);
+
+  const nTokensEl = document.getElementById("n_tokens");
+  const nTokensLabel = document.getElementById("n_tokens_label");
+  nTokensEl.addEventListener("input", ()=>nTokensLabel.textContent = nTokensEl.value);
+
+  // Canvas animation & feed
+  const canvas = document.getElementById("canvas");
+  const ctx = canvas.getContext("2d");
+  function resizeCanvas(){ canvas.width = canvas.clientWidth * devicePixelRatio; canvas.height = canvas.clientHeight * devicePixelRatio; ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0); }
+  window.addEventListener("resize", ()=>{ resizeCanvas(); drawBackground(); });
+  resizeCanvas();
+
+  function drawBackground(){
+    ctx.fillStyle = "#06111a";
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    // axis
+    ctx.fillStyle = "#07232d";
+    ctx.fillRect(0,0,canvas.width,40);
+  }
+  drawBackground();
+
+  let streamEvents = []; // list of events with t_ms, conv, size, topic
+  let streamStart = null;
+  let animReq = null;
+  let playIdx = 0;
+  const feedEl = document.getElementById("feed");
+
+  function clearFeed(){ feedEl.innerHTML = ""; }
+  function addFeedLine(txt, cls){
+    const el = document.createElement("div"); el.textContent = txt; el.style.padding="2px 0";
+    if(cls==="alert") el.style.color = "var(--danger)"; feedEl.appendChild(el); feedEl.scrollTop = feedEl.scrollHeight;
+  }
+
+  function renderFrame(){
+    if(!streamStart) return;
+    const now = performance.now() - streamStart;
+    // draw background
+    drawBackground();
+    // Draw tokens emitted upto now as circles
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    const recent = streamEvents.filter(e => e.t_ms <= now);
+    // show most recent 150 events
+    const recentSlice = recent.slice(Math.max(0, recent.length-150));
+    // layout: x time, y by conversation
+    const convs = Array.from(new Set(streamEvents.map(e=>e.conv))).slice(0,12);
+    const convIndex = {}; convs.forEach((c,i)=>convIndex[c]=i);
+    for(let i=0;i<recentSlice.length;i++){
+      const e = recentSlice[i];
+      const x = (e.t_ms / 4000) * w; // 4s window mapped to width
+      const y = 60 + (convIndex[e.conv] % 12) * ((h-80)/12);
+      const r = Math.min(12, Math.max(4, e.size/60));
+      // color by topic
+      const cols = ["#00d38a","#00c6ff","#ffb86b"];
+      ctx.beginPath();
+      ctx.fillStyle = cols[e.topic % cols.length];
+      ctx.globalAlpha = 0.9;
+      ctx.arc(x, y, r, 0, Math.PI*2);
+      ctx.fill();
+    }
+    // advance feed: add new lines for freshly emitted tokens since last playIdx
+    while(playIdx < streamEvents.length && streamEvents[playIdx].t_ms <= now){
+      const e = streamEvents[playIdx];
+      addFeedLine(`[${(e.t_ms/1000).toFixed(3)}s] ${e.conv} topic=${e.topic} size=${e.size}B`);
+      playIdx++;
+    }
+    animReq = requestAnimationFrame(renderFrame);
+  }
+
+  function stopAnimation(){
+    if(animReq) cancelAnimationFrame(animReq);
+    animReq = null;
+    streamStart = null;
+    playIdx = 0;
+  }
+
+  // Generate preview stream by calling Python generate_preview_stream
+  async function generatePreview(){
+    clearFeed();
+    stopAnimation();
+    if(!pyodideReady) return alert("Pyodide not ready yet");
+    const n_convs = 6;
+    const tokens_each = parseInt(document.getElementById("n_tokens").value) || 60;
+    const mode = document.getElementById("mode_chunk").checked && !document.getElementById("mode_token").checked ? "chunk" : "token";
+    const use_padding = document.getElementById("use_padding").checked;
+    const use_batch = document.getElementById("use_batch").checked;
+    const use_dummy = document.getElementById("use_dummy").checked;
+    const pad_to = parseInt(document.getElementById("pad_to").value) || 100;
+    const batch_mean = parseFloat(document.getElementById("batch_mean").value) || 4;
+    const dummy_rate = parseFloat(document.getElementById("dummy_rate").value) || 0.12;
+    const def = use_padding || use_batch || use_dummy ? { "use_padding": use_padding, "pad_to": pad_to, "use_batch": use_batch, "batch_mean": batch_mean, "use_dummy": use_dummy, "dummy_rate": dummy_rate } : null;
+    // call py function generate_preview_stream
+    const arg = {
+      n_conversations: n_convs,
+      tokens_each: tokens_each,
+      mode: mode,
+      defenses: def
+    };
+    // build python call
+    let pyCall = `
+generate_preview_stream(${arg.n_conversations}, ${arg.tokens_each}, mode="${arg.mode}", defenses=${JSON.stringify(def)})
+`;
+    const events = await pyodide.runPythonAsync(pyCall);
+    // events is a Python list of dicts; convert via toJs
+    const eventsJs = events.toJs ? events.toJs() : events;
+    streamEvents = eventsJs.map(e=>{
+      return { t_ms: e.get("t_ms") || e.t_ms, conv: e.get ? e.get("conv") : e.conv, topic: parseInt(e.get ? e.get("topic") : e.topic), size: parseInt(e.get ? e.get("size") : e.size) };
+    });
+    streamStart = performance.now();
+    playIdx = 0;
+    animReq = requestAnimationFrame(renderFrame);
+  }
+
+  // Run full benchmark by calling run_benchmark in Python, then render results table & small plots
+  async function runBenchmark(){
+    if(!pyodideReady) return alert("Pyodide not ready");
+    document.getElementById("results_panel").style.display = "block";
+    document.getElementById("summary").textContent = "Running benchmark (this runs entirely in your browser; please be patient)...";
+    const n_per_topic = parseInt(document.getElementById("n_per_topic").value) || 300;
+    const n_tokens = parseInt(document.getElementById("n_tokens").value) || 80;
+    const modes=[]
+    if(document.getElementById("mode_token").checked) modes.push("token");
+    if(document.getElementById("mode_chunk").checked) modes.push("chunk");
+    const defenses = [
+      {"name":"none"},
+      {"name":"padding","pad_to":parseInt(document.getElementById("pad_to").value)||100},
+      {"name":"batching","batch_mean":parseFloat(document.getElementById("batch_mean").value)||4},
+      {"name":"dummy","dummy_rate":parseFloat(document.getElementById("dummy_rate").value)||0.12},
+      {"name":"combined","pad_to":parseInt(document.getElementById("pad_to").value)||100,"batch_mean":parseFloat(document.getElementById("batch_mean").value)||4,"dummy_rate":parseFloat(document.getElementById("dummy_rate").value)||0.12}
+    ];
+    // build python run call
+    const pyCmd = `
+res = run_benchmark(n_per_topic=${n_per_topic}, n_tokens=${n_tokens}, modes=${JSON.stringify(modes)}, defenses=${JSON.stringify(defenses)})
+res
+`;
+    const pyres = await pyodide.runPythonAsync(pyCmd);
+    const results = pyres.toJs ? pyres.toJs() : pyres;
+    // results is list of dict-like objects
+    // fill table
+    const tbody = document.querySelector("#results_table tbody");
+    tbody.innerHTML = "";
+    const rows = results.map(r=>{
+      const tr = document.createElement("tr");
+      function td(txt){ const d=document.createElement("td"); d.textContent = txt; return d; }
+      tr.appendChild(td(`${r.train_mode}→${r.test_mode}`));
+      tr.appendChild(td(r.defense));
+      tr.appendChild(td(r.param));
+      tr.appendChild(td((r.acc).toFixed(3)));
+      tr.appendChild(td((r.bw_frac*100).toFixed(1)+"%"));
+      tr.appendChild(td((r.lat_frac*100).toFixed(1)+"%"));
+      tr.appendChild(td((r.mi).toFixed(4)));
+      tr.appendChild(td("n/a"));
+      tbody.appendChild(tr);
+      return r;
+    });
+    // compute small aggregated plots (accuracy by defense)
+    const agg = {};
+    for(const r of rows){
+      if(!agg[r.defense]) agg[r.defense]=[];
+      agg[r.defense].push(r.acc);
+    }
+    // simple plot: mean accuracy per defense
+    const defensesList = Object.keys(agg);
+    const means = defensesList.map(d=>agg[d].reduce((a,b)=>a+b,0)/agg[d].length);
+    // create simple inline svg bar chart
+    const plotsEl = document.getElementById("plots");
+    plotsEl.innerHTML = "";
+    const svgNS = "http://www.w3.org/2000/svg";
+    const w=600,h=120;
+    const svg = document.createElementNS(svgNS,"svg"); svg.setAttribute("width",w); svg.setAttribute("height",h);
+    const maxv = Math.max(...means,0.0001);
+    defensesList.forEach((d,i)=>{
+      const bw = (w-120)/defensesList.length;
+      const x = 60 + i*bw;
+      const barh = (means[i]/maxv) * (h-40);
+      const rect = document.createElementNS(svgNS,"rect");
+      rect.setAttribute("x",x); rect.setAttribute("y",h-20-barh); rect.setAttribute("width",bw-10); rect.setAttribute("height",barh);
+      rect.setAttribute("fill","#00c6ff"); svg.appendChild(rect);
+      const text = document.createElementNS(svgNS,"text");
+      text.setAttribute("x", x + (bw-10)/2); text.setAttribute("y", h-4); text.setAttribute("fill","#cfefff"); text.setAttribute("font-size","12"); text.setAttribute("text-anchor","middle");
+      text.textContent = d;
+      svg.appendChild(text);
+    });
+    plotsEl.appendChild(svg);
+    document.getElementById("summary").textContent = `Benchmark complete — ${rows.length} experiments shown.`;
+  }
+
+  document.getElementById("preview_btn").addEventListener("click", ()=>{
+    generatePreview().catch(err=>{ console.error(err); alert("Error generating preview (see console)"); });
+  });
+  document.getElementById("run_btn").addEventListener("click", ()=>{
+    runBenchmark().catch(err=>{ console.error(err); alert("Error running benchmark (see console)"); });
+  });
+
+</script>
+</body>
+</html>
